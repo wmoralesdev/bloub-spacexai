@@ -103,23 +103,160 @@ Its size is computed on the space actually available
 (`calc((100vw - 7rem) / 3.05)`, 3.05 being the measured width of the word in ems):
 in `vw` alone its last character ended up off screen.
 
-## The URL describes the player, not the views
+## Six rail views with shareable URLs
 
-`#etat=` is only written from the Animations view. Writing it elsewhere fired a
-`hashchange` that put the playhead back on the indices of the user's montage, while
-the settings view plays its own: the player stayed stuck on its entry state.
+The rail has Customise, Stills (`figes`), Bot cards, Speakers, Animations, and Settings. Stills is a
+collection of frozen idle portraits (shape × expression × colour); it never writes
+the hash. The centre is the grid of added stills, the right panel is the same
+customiser plus Add.
 
-Inside the view, the same `hashchange` had a second, worse effect. `locate()` looks
-the state up with a `findIndex`, so it returns its **first** occurrence. A montage
-with the same state twice — one click in the right-hand palette is enough — could
-therefore never get past the second one: reaching it wrote `#etat=idle`, the
-resulting `hashchange` read as an incoming navigation, and the playhead jumped back
-to the first `idle`. Pausing on the second occurrence did the same, through `&stop`.
+Stills also has a separate checkbox on each portrait for sticker-sheet selection.
+Checking it does not open the portrait for editing, and editing a portrait does not
+change its sheet selection. Select all, Clear selection and a selected count sit
+beside Create sheet, which is enabled when a portrait is checked or a branding
+SVG is uploaded. Bot selection starts empty and is not saved. The optional branding
+upload adds one more sticker, with a cut line following the logo silhouette. SVGs
+must be self-contained, at most 256 KB, with text converted to outlines. The logo
+is saved locally and can be replaced or removed independently of the bots.
 
-Hence `ecritParNous` in `App.vue`: the fragment we just wrote is remembered and its
-`hashchange` is ignored. It is **consumed** on that first read rather than kept —
-one write fires at most one event, and a browser Back to that same state later is a
-real navigation that must still move the playhead.
+The sheet dialog shows the active A4, Letter, Half Letter, ¼ Letter or Custom preset.
+Half Letter is 215.9 × 139.7 mm and ¼ Letter is 139.7 × 107.95 mm in landscape.
+Custom enables
+dimension editing in centimetres; any preset can change orientation. Sheet colour
+affects artwork and overlay, while cutting remains contours only. White border,
+spacing and margins use millimetres. Artwork, cutting and overlay previews share
+one physical layout.
+Defaults are A4 landscape (297 × 210 mm), a 2 mm white border, 4 mm spacing and
+10 mm margins. Auto-fit is enabled initially: it finds the largest common sticker
+size that fits the selection, balances row counts and centres each row and the
+whole group. Turning it off restores the editable manual size (initially 40 mm,
+including the border, for a capacity of 24). Manual overflow or invalid geometry
+blocks download with an explanation. The options persist locally, and no mode adds
+extra pages. The export format selects RGB SVG artwork or CMYK PDF artwork. The
+resulting ZIP contains `arte.svg` or `arte-cmyk.pdf` plus a matching `troquel.svg`
+at the same physical sheet size, without cutter-specific registration marks.
+CMYK uses the SWOP profile through the local render service; the on-screen
+preview remains RGB. Existing still downloads remain available independently.
+
+Branding has its own size and centre position, in centimetres measured from the
+sheet’s top-left corner. Its size is the longest finished side, including the white
+border, and preserves the logo’s proportions. Drag the logo in the preview with a
+mouse or touch, or focus it and use the arrow keys; hold Shift for larger steps.
+The numeric fields provide precise placement. When a larger logo needs more room,
+the other stickers in its row move left while retaining their size and spacing;
+other rows stay in place. Reset logo restores automatic size and placement. Logo
+adjustments are saved locally. Its white border and cut line retain their physical
+dimensions and match across preview and exports. A logo extending beyond the sheet
+margins, or leaving too little room for the stickers beside it, blocks download
+until its size or position is corrected.
+
+The `tab` search parameter selects the view: `personnaliser`, `figes`, `bot-cards`,
+`speakers`, `animations`, or `reglages`. A direct tab link skips the arrival animation
+and opens its editor immediately. Reload, browser Back and browser Forward restore
+the tab; selecting another tab adds one history entry and preserves other search
+parameters. An absent, empty, or unknown value selects Customise. Selecting Customise
+removes `tab` from the URL; the explicit `?tab=personnaliser` value is also accepted.
+Editors still retain their drafts when switching views.
+
+Bot cards has its own editor, loaded on first visit and kept mounted while hidden.
+The collection starts empty; cards are created on demand, with a name, handle,
+description, bot link, optional event name and their own bot shape, expression and colour. Front and
+Back controls select the side shown in the static square SVG preview and used
+by the PNG, SVG and CMYK PDF downloads. The front fills the square with six colourful bots on
+black, with a customisable event name of up to 80 characters. The event name field
+accepts Enter for manual line breaks, preserved in the artwork. The card's customised
+bot occupies the lower-right position in the collage. The back places the QR code alongside
+the bot, name, handle and description on white. A valid HTTP(S) link is required to
+export the back with its QR code; the front can be exported without a link.
+CMYK PDF has a square physical card size, initially 10 × 10 cm and editable from
+1 to 30 cm. It uses the SWOP profile, while the preview remains RGB.
+The collection's PNG, SVG and CMYK PDF ZIP buttons download both sides of all saved
+cards as separate files and show progress. Missing names or links take the user to the first card that needs
+attention before generating any files. Individual and collection exports cannot
+run simultaneously.
+Older saved cards load with an empty event name and an empty link if none was saved.
+The card collection is saved locally
+after a 400 ms debounce and on `pagehide`; save failures leave
+the draft available and offer a retry. Cards can be selected, duplicated and
+deleted with confirmation. This view hides the animated scene and never writes
+the player's URL fragment.
+
+Speakers uses a separate editor layout, not the avatar scene's three-column
+grid. It loads on first visit and stays mounted while hidden. Saved speaker
+variants preserve text, composition, photo and export format in localStorage,
+with a 600 ms debounce; the selected variant is restored on reload. The editor
+does not write the player's URL fragment. The initial variants include Walter
+Morales, Daniela López, Fernando Borea, Saul Calderon and Leonel Guerrero with bundled cutout portraits. Users
+can create, select, duplicate and delete variants, or choose a different bundled
+photo. New bundled speakers are added to existing libraries without replacing
+saved edits, changing the selection or restoring deleted variants. Deleting a
+variant requires confirmation. A save status reports pending
+changes, successful local saves or storage errors and allows retrying a save.
+The artwork is a canvas beside a labelled form on desktop, and above it on
+small screens. The 4:3, 1:1 and portrait 9:16 formats recompose the design rather
+than stretch it. Photo framing has keyboard-accessible range controls; no drag-only editing
+is required. Only transparent PNG/WebP portraits are intended for this editor;
+background removal happens beforehand. Daniela and Fernando use the approved
+AI-edited transparent portraits; their photo IDs stay stable for saved variants. Uploaded photos
+are optimized to transparent WebP with a maximum dimension of 1200 px before
+being saved locally. The source files remain unchanged. Storage failures leave
+the current draft available in the tab; clearing site data removes saved variants.
+
+The **Individual cards / Speakers & talks** switch opens a collective artwork
+with the saved portraits, names and talk titles, without individual session
+times. Its aspect starts at 1:1 and can also use 4:3 or 9:16. Each speaker links
+back to their editable card; event details come from the first saved card.
+Landscape and square artwork place a compact two-column agenda above a large,
+overlapping row of bust portraits, with a gentle progression in size. The five
+bots form a spaced group in the upper-right corner, with four distinct extra bots
+extending left and down to form a short frame. They look down and left toward
+the content. Their silhouettes stay upright, and space is reserved from the
+header and agenda at every bot size. Stories
+alternate portraits and talk text in one close row per speaker, with bots along the edges.
+Tall source photos are framed from the top down, preserving heads and cropping
+the lower body. The same composition serves static and animated exports.
+The collective preview and download use the same four file formats as individual
+cards. The ZIP action appends its three sizes after all individual cards, using
+the selected file format and the collection captured at the start of export.
+
+The format selector offers PNG, JPEG, MP4 and GIF, saved independently per variant.
+The dimensions beside the aspect controls reflect the chosen format: static
+images and MP4 use native dimensions; GIF caps the longer side at 960 px.
+Selecting MP4/GIF loads a Hyperframes preview of the same 6-second, silent
+composition used for export. The bots retain their neutral expression,
+shape, size and colour, with gentle gaze shifts, blinks and very subtle floating.
+Each bot has its own timing, and movements can overlap. Portrait and text stay fixed.
+A pause/play control is available, and playback pauses when Speakers, its preview,
+or the browser tab is hidden.
+Reduced-motion preferences start the preview paused.
+
+Animated downloads use the local render service. Progress and Cancel appear
+while rendering; duplicate submissions are disabled. The form remains editable,
+but an in-flight export retains the captured card and filename. Failure shows
+an error and Retry export; cancellation returns the editor to a downloadable
+state. GIF files loop infinitely; MP4 guidance explains that repetition is a
+video-player setting. PNG/JPEG retain their static preview and browser export.
+
+## Search parameters select the view; the fragment describes playback
+
+The `tab` parameter selects the view independently of a retained `#etat=` fragment.
+For example, `?tab=speakers#etat=orbit&stop` opens Speakers. An absent, empty, or
+invalid tab always selects Customise, including on a URL with `#etat=`. To link
+directly to a playback state, use `?tab=animations#etat=orbit&stop`.
+`#planche` continues to display the frozen state gallery; its return link preserves
+the tab parameter.
+
+`#etat=` is only written from the Animations view. It follows the current state
+and playback (`&stop` for paused) using `history.replaceState`, which retains the
+search parameters and does not add a history entry for each state. Tab selection
+uses `history.pushState`; incoming Back/Forward navigation restores the view
+without writing another entry.
+
+Using `replaceState` also avoids firing a `hashchange` for our own playback updates.
+That matters when a montage contains the same state twice: resolving an incoming
+state fragment with `locate()` selects its first occurrence, so interpreting our own
+update as navigation would jump back from the second occurrence. Genuine incoming
+fragment changes and history navigation are still read normally.
 
 ## Every editing gesture has a keyboard route
 

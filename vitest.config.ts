@@ -13,7 +13,7 @@ export default defineConfig({
    * a besoin (`// @vitest-environment happy-dom`). C'est ce qui garde la suite a quelques
    * secondes.
    */
-  plugins: [vue()],
+  plugins: [vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === 'hyperframes-player' } } })],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
   },

@@ -19,6 +19,7 @@ import {
   DEMI_CADRE,
   RAYON_MAX,
   nomFichier,
+  nomsFiges,
   sansCommentaires,
   viewBoxExport
 } from './export'
@@ -229,5 +230,22 @@ describe('nom de fichier', () => {
 
   it('survit a des ids vides', () => {
     expect(nomFichier('', '', '', 'png')).toBe('bloub.png')
+  })
+
+  it('suffixe un triple identique pour le zip', () => {
+    expect(
+      nomsFiges([
+        { shape: 'goutte', expression: 'neutre', color: 'encre' },
+        { shape: 'cercle', expression: 'hilare', color: 'violet' },
+        { shape: 'goutte', expression: 'neutre', color: 'encre' }
+      ])
+    ).toEqual([
+      'bloub-goutte-neutre-encre.png',
+      'bloub-cercle-hilare-violet.png',
+      'bloub-goutte-neutre-encre-2.png'
+    ])
+    expect(
+      nomsFiges([{ shape: 'goutte', expression: 'neutre', color: 'encre' }], 'svg')
+    ).toEqual(['bloub-goutte-neutre-encre.svg'])
   })
 })

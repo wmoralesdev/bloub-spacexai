@@ -5,7 +5,8 @@ import { blockAt, defaultCycle, offsetOf, type Block } from '@/bot/cycles'
 import { RAYON } from '@/bot/repere'
 import { SHAPE_BY_ID } from '@/bot/skins'
 import { EXPRESSION_BY_ID } from '@/bot/expressions'
-import { ouvreCycle } from './capture'
+import { ouvreCycle, portraitsDuBot } from './capture'
+import { POSE_FIGE } from '@/bot/figes'
 import { DEMI_ECRAN, viewBoxExport } from './export'
 
 /**
@@ -155,5 +156,28 @@ describe('lecteur hors ecran', () => {
         lecteur.ferme()
       }
     }
+  })
+})
+
+describe('portraits figes hors ecran', () => {
+  it('serialise le SVG du composant, a la pose de repos', async () => {
+    const reglages = { shape: 'goutte', color: 'violet', expression: 'hilare' }
+    const moteur = new BotEngine(
+      RAYON,
+      'idle',
+      SHAPE_BY_ID.get(reglages.shape)!.radii,
+      EXPRESSION_BY_ID.get(reglages.expression)!
+    )
+    const attendu = moteur.sample(POSE_FIGE)
+    const [svg] = await portraitsDuBot([reglages], TAILLE, (el) => el)
+    expect(corpsDe(svg!)).toBe(attendu.bodyPath)
+    expect(yeuxDe(svg!)).toEqual(attendu.eyes.map((e) => e.matrix))
+  })
+
+  it('reutilise la meme instance en changeant d identite', async () => {
+    const a = { shape: 'cercle', color: 'encre', expression: 'neutre' }
+    const b = { shape: 'goutte', color: 'violet', expression: 'hilare' }
+    const chemins = await portraitsDuBot([a, b], TAILLE, (svg) => corpsDe(svg))
+    expect(chemins[0]).not.toBe(chemins[1])
   })
 })

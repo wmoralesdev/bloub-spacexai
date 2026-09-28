@@ -27,6 +27,10 @@ const props = withDefaults(
     shape?: string
     /** identifiant de couleur du personnalisateur */
     color?: string
+    /** Optional artwork color; does not extend the avatar's shared palette. */
+    bodyColor?: string
+    /** Profil radial propre à un art, sans ajouter de forme au personnalisateur. */
+    bodyRadii?: number[]
     /** identifiant d'expression de repos du personnalisateur */
     expression?: string
     /** couleur du fond, utilisee pour la brume de profondeur des particules */
@@ -87,8 +91,8 @@ const elapsed = defineModel<number>('elapsed', { default: 0 })
 const R = RAYON
 const VB = DEMI_VIEWBOX
 
-const shapeRadii = computed(() => SHAPE_BY_ID.get(props.shape)?.radii ?? null)
-const ink = computed(() => COLOR_BY_ID.get(props.color)?.hex ?? '#0a0a0c')
+const shapeRadii = computed(() => props.bodyRadii ?? SHAPE_BY_ID.get(props.shape)?.radii ?? null)
+const ink = computed(() => props.bodyColor ?? COLOR_BY_ID.get(props.color)?.hex ?? '#0a0a0c')
 const expression = computed(() => EXPRESSION_BY_ID.get(props.expression) ?? null)
 
 const engine = new BotEngine(R, state.value, shapeRadii.value, expression.value)
@@ -579,7 +583,7 @@ function dotAttrs(dot: BotFrame['dots'][number]) {
         laissaient voir jusqu'ici, le fond de la page. Les mettre en blanc les
         rendrait plus clairs que le fond, ce qui se verrait sur une grande boule.
       -->
-      <path :d="frame.bodyPath" :fill="props.paper" />
+      <path data-bot-outline :d="frame.bodyPath" :fill="props.paper" />
       <g :mask="`url(#${maskId})`">
         <rect :x="-VB" :y="-VB" :width="VB * 2" :height="VB * 2" :fill="ink" />
       </g>

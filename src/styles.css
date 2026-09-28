@@ -510,6 +510,16 @@ body,
         min(460px, 100dvh - var(--timeline) - 7rem) / 2 - 0.5rem
     );
   }
+
+  /*
+   * Collection figee : la grille remplit la colonne, donc viser la boite de
+   * l'avatar poserait le bouton au milieu des vignettes. Bas de fenetre, memes
+   * `left`/`right` que l'autre barre.
+   */
+  .barre-export--bas {
+    top: auto;
+    bottom: 2rem;
+  }
 }
 
 /*

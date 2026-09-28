@@ -1,10 +1,132 @@
 # Export
 
+## Bot cards
+
+Bot cards export the selected Front or Back as a static square. PNG and SVG use
+a 2000 × 2000 canvas; CMYK PDF uses a physical size, initially 10 × 10 cm and
+adjustable from 1 to 30 cm per side.
+The front fills a black background with a collage of six colourful bots and an
+optional event name. Its lower-right bot uses the card's own shape, expression
+and colour. The back keeps the bot, name, handle and description composition on
+white and adds the bot's QR code. Preview and export
+use the same SVG rendering. PNG rasterises that SVG at its full dimensions;
+SVG preserves the vector artwork. The PDF uses the same artwork through the
+CMYK print pipeline below. None of these formats contains animation. Card
+content and appearance are independent of the main avatar and speaker artwork.
+
+Each card stores its own bot URL and optional event name (up to 80 characters).
+Event titles preserve manual line breaks in previews and all export formats,
+reducing the font size when needed to keep each chosen line together.
+Back exports require a valid HTTP(S) link, limited to 1,200 encoded characters;
+front exports do not depend on that link.
+QR codes are generated locally without an external service and remain vector
+artwork in SVG exports. Black QR modules sit on the white back.
+A clear four-module quiet zone surrounds the symbol to preserve
+scannability.
+
+Collection downloads generate a PNG, SVG or CMYK PDF ZIP with both Front and Back
+for every saved card, regardless of the previewed side. PNG and SVG archives are
+named `bot-cards-png.zip` and `bot-cards-svg.zip`; the CMYK archive contains a separate
+PDF for each face at the selected physical card size.
+Files are numbered in collection order and include `front` or `back` in the name,
+so duplicate card names remain distinct. Every card must have a name and valid
+bot URL before the batch starts. The batch captures the collection at the click,
+renders one file at a time with progress, and downloads only a complete archive.
+Edits made while it runs apply to the next export.
+
+## CMYK print export
+
+Bot cards and sticker sheets send their artwork and physical dimensions to
+`POST /api/print-export` on the local render service. Chrome/Chromium renders the
+artwork to PDF, then Ghostscript converts it using its bundled SWOP
+`default_cmyk.icc` profile and embeds that profile as a PDF OutputIntent. This is
+a CMYK PDF export; it does not claim PDF/X certification. Browser previews remain
+RGB, and existing PNG and SVG downloads remain available.
+
+Run the service through `pnpm dev` or `pnpm start`; `pnpm preview` alone does not
+provide this endpoint. Install Ghostscript on macOS with `brew install ghostscript`.
+Chrome/Chromium must also be installed. Set `BLOUB_GHOSTSCRIPT_PATH` or
+`HYPERFRAMES_BROWSER_PATH` when either executable is outside the detected locations.
+If the service or a required executable is unavailable, the editor reports it and
+keeps the artwork available for another export attempt.
+
+## Speaker artwork
+
+Speaker artwork has its own rectangular pipeline. It does not change the square
+avatar, still ZIP, GIF or video export APIs. Canvas 2D handles static preview and
+PNG/JPEG output: opaque black background, a cutout portrait with a diagonal alpha
+mask, frozen SVG bots, and text. The bots use a local artwork palette and black
+eyes; the global customiser palette remains unchanged.
+
+The dimensions are 2400 × 1800 for 4:3, 2000 × 2000 for 1:1, and 1080 × 1920 for
+9:16 Instagram Stories. Native canvas encoding produces PNG or JPEG (quality 0.95). Images must
+finish decoding before export; export takes a snapshot of the current draft
+and duplicate clicks are guarded. Object URLs are released after use. PNG/JPEG
+encoding stays entirely in the browser.
+
+MP4/GIF add a silent, seamless 6-second loop. All five bots retain their neutral
+expression, original shape, size and colour. Gentle gaze shifts, blinks and very
+subtle floating give each bot its own timing; movements may overlap. Canvas
+rasterizes the background/portrait and foreground/text layers, keeping the same
+stacking and typography. The preview and export use the same finite Hyperframes
+composition and GSAP timeline; playback or the GIF encoder supplies repetition.
+Hyperframes Player and Producer are pinned to 0.8.46; animation packages load
+only when needed.
+
+| Format | Output dimensions | Frame rate | Looping |
+|---|---|---|---|
+| MP4 | 2400 × 1800, 2000 × 2000, or 1080 × 1920 | 30 fps | Enable repeat in the video player |
+| GIF | 960 × 720, 960 × 960, or 540 × 960 | 15 fps | Infinite in the file |
+
+The editor captures immutable raster layers and bot geometry before rendering.
+It sends these to a local Node service, which builds its own HTML composition and
+uses Producer's `createRenderJob` and `executeRenderJob` with Chrome and FFmpeg.
+The service does not accept user HTML or external image URLs. Only the requested
+format is rendered; later edits cannot change its artwork or download filename.
+
+One render can run at a time. The editor polls progress, supports cancellation,
+and offers retry after failure or service unavailability. Leaving the editor
+mounted but hidden keeps an export running; unmounting cancels it. Failed and
+cancelled renders remove their temporary files. Completed files expire after
+15 minutes; expired files are cleaned periodically and service shutdown removes
+its jobs. Jobs are temporary and do not survive a service restart.
+
+The local API exposes `POST /api/speaker-renders`, `GET /api/speaker-renders/:id`,
+`GET /api/speaker-renders/:id/file`, and `DELETE /api/speaker-renders/:id`.
+`GET /api/speaker-renders/health` checks that the service is reachable; it does
+not preflight Chrome or FFmpeg. Render states are `queued`, `rendering`,
+`cancelling`, `completed`, `failed`, and `cancelled`.
+
+Use Node.js 24+, local Chrome/Chromium, and FFmpeg including `ffprobe`.
+`pnpm install` allows esbuild's build script; Puppeteer's browser download is
+intentionally disabled. Standard browser locations are detected automatically.
+Set `HYPERFRAMES_BROWSER_PATH` for another Chrome executable, or
+`PRODUCER_HEADLESS_SHELL_PATH` for a headless shell; the latter takes precedence.
+`HYPERFRAMES_FFMPEG_PATH` and `HYPERFRAMES_FFPROBE_PATH` override media executables.
+
+`pnpm dev` starts Vite on 5190 and the service on 5191. An existing Vite session
+only needs `node server/index.ts --dev` alongside it. `pnpm build && pnpm start`
+serves the compiled app and API together on 5190, bound to `127.0.0.1` by default.
+`SPEAKER_RENDER_HOST` and `SPEAKER_RENDER_PORT` override that binding; changing the
+development service port also requires updating Vite's proxy. Browser origins
+and API hostnames are restricted to local access. These commands do not deploy
+the app publicly.
+
+Saved speaker variants retain their text, composition, photo and chosen export
+format in localStorage with a 600 ms debounce. The bundled cutouts of Walter
+Morales, Daniela López and Fernando Borea are referenced as local assets;
+uploaded PNG/WebP portraits are optimized to transparent WebP with a maximum
+dimension of 1200 px for storage. This does not change the artwork's export
+dimensions. Saving errors are reported in the editor without discarding the
+current draft, and the original uploaded files are never modified.
+
 The Personnaliser view's export bar. `src/ui/export.ts` is pure and tested (frame,
 catalogue, filename); `src/ui/capture.ts` is the DOM layer (canvas, clipboard);
 `src/components/ExportBar.vue` is presentational and only emits a format, like
-`Customizer.vue`. Everything still images is dependency-free: `XMLSerializer` and a canvas
-are enough. Only the **cycle video** pulls a library, and only on demand (see below).
+`Customizer.vue`. Individual avatar and still exports are dependency-free:
+`XMLSerializer` and a canvas are enough. Sticker sheets load their vector offset
+library on demand. The **cycle video** encoder and speaker animation packages are loaded
+on demand (see the speaker pipeline above and cycle export below).
 
 ## Nothing is reserved for the bar, and nothing should be
 
@@ -122,12 +244,74 @@ theirs to decide; whoever wants bigger takes the SVG, which has no size.
 GIF is ruled out **for the still export** by its 1-bit transparency: a staircase edge where
 PNG has 8 bits of alpha.
 
+## A zip of frozen stills, not the live avatar
+
+The Stills tab exports every added portrait as a 1024 PNG, packed in a STORE zip
+(`src/ui/zip.ts`). No JSZip: the PNGs are already compressed, so this needs no
+additional runtime dependency.
+
+Each PNG is rendered off-screen (`portraitsDuBot`), `frozenAt = 1`, one `BloubBot`
+instance whose identity changes between frames. Serialising the live avatar would
+bake a blink; upscaling a 60 px tile would not be the component's own drawing.
+
+Filenames reuse `nomFichier` (ids, not labels). A repeated triple gets `-2`, `-3`.
+PNG goes to `bloub-figes.zip`, SVG to `bloub-figes-svg.zip`. Still zip has no GIF.
+
+## Sticker sheets share one physical layout for artwork and cutting
+
+In Stills, select portraits with the separate sheet checkboxes and choose Create
+sheet. Each selected portrait appears once; an optional uploaded branding SVG is
+one additional sticker. A4, Letter, Half Letter, ¼ Letter and Custom show their active state, with editable
+centimetre dimensions in Custom and an orientation switch for all presets. Half
+Letter is 215.9 × 139.7 mm and ¼ Letter is 139.7 × 107.95 mm in landscape. The
+default is A4 landscape (297 × 210 mm), with a 2 mm white border, 4 mm between
+sticker boxes and 10 mm sheet margins. Auto-fit finds the largest common sticker
+size that fits all items, balances row counts and centres the group and each row.
+Turning it off restores manual sizing (initially 40 mm including the border, with
+a capacity of 24 on the default sheet).
+
+The RGB download is a ZIP containing `arte.svg` and `troquel.svg`, with identical
+physical dimensions and placement. The CMYK option instead includes `arte-cmyk.pdf`
+and the same `troquel.svg`, matched to the sheet dimensions in millimetres. Preview
+and export use the same placement, including independently adjusted branding.
+Artwork preserves the frozen bots with white eyes.
+The adjustable white border is a rounded geometric offset of the bot's exterior;
+the cutting file follows that same exterior with closed, unfilled magenta paths.
+Eyes are printed details, not interior cuts. The chosen sheet colour fills artwork
+and overlay only. Both SVG files remain vector-only. Downloads contain no
+cutter-specific registration marks.
+
+Branding SVGs must be self-contained, at most 256 KB, with text converted to
+outlines. Sanitized vector artwork is retained in the export with isolated IDs.
+Its cut line is traced from rendered transparency; disconnected logo parts are
+joined by white bridges before applying the rounded border, and internal holes
+are not cuts. A disconnected logo with zero border cannot form one sticker and
+blocks export. This sampled logo contour does not carry the native bots' geometric
+error guarantee.
+
+The logo has an independent size and centre position, entered in centimetres from
+the sheet’s top-left corner. Size sets the longest finished side, including the
+white border, while preserving its proportions. It can also be moved directly in
+the preview with mouse or touch, or with arrow keys when focused; Shift uses larger
+steps. Enlarging the logo shifts the other stickers in its row left as needed,
+preserving their size and spacing; other rows stay in place. Reset logo restores
+automatic size and placement. The border and cut contour are generated at the final
+physical size, with identical placement in the artwork, cutting file and preview.
+A logo outside the sheet margins, or leaving too little room for its neighbouring
+stickers, blocks export until its size or position is corrected.
+
+Empty sheets, invalid measurements or geometry, and manual selections exceeding
+capacity block export. Auto-fit adjusts sizes but does not remove items or create
+extra pages. Sheet options, logo adjustments and the uploaded logo are saved locally; the selected
+portraits are temporary and start unchecked after a reload. Individual PNG/SVG
+downloads and the existing ZIP of all stills keep their existing behaviour.
+
 ## The animated GIF exists only for platform reach
 
 Discord and Slack accept a GIF as an animated avatar and an SVG nowhere, which is its whole
 reason to exist. Everywhere else the animated SVG is better on every axis.
 
-**It is the only export that asks a question**, and only because GIF alpha is one bit: the
+**GIF export asks about its background** because GIF alpha is one bit: the
 ball's antialiased rim has to be thresholded at 50 %, which comes out as a staircase. A solid
 background smooths that rim back out because it has something to blend into, at the cost of
 baking the colour in. Neither choice wins everywhere, so a dialog offers both, white first

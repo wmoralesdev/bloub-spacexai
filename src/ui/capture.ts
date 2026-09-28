@@ -13,8 +13,10 @@
 import { createApp, h, nextTick, ref } from 'vue'
 import BloubBot from '@/components/BloubBot.vue'
 import type { Block } from '@/bot/cycles'
+import { POSE_FIGE } from '@/bot/figes'
 import { gifAnime, gifIndexe, indexe, nouvellePalette, recense, svgAnime } from './anime'
 import { arrete, DEMI_ECRAN, sansCommentaires, viewBoxExport } from './export'
+import { zipBlob } from './zip'
 
 /**
  * Serialise le SVG affiche en un document autonome, recadre sur la boule.
@@ -301,6 +303,67 @@ export async function sequenceDuBot<T>(
     app.unmount()
     hote.remove()
   }
+}
+
+/**
+ * Rend une collection de portraits figes, une instance hors ecran, en variant
+ * l'IDENTITE (forme / expression / couleur) et non le temps. `frozenAt` reste
+ * 1 : c'est la pose de repos du personnalisateur, reproductible au pixel.
+ *
+ * Un seul bot, change de props, `nextTick` : monter N applications ferait
+ * autant de moteurs pour rien.
+ */
+export async function portraitsDuBot<T>(
+  portraits: ReglagesBot[],
+  taille: number,
+  lis: (svg: SVGSVGElement, index: number) => T | Promise<T>,
+  options: { paper?: string } = {}
+): Promise<T[]> {
+  const hote = document.createElement('div')
+  hote.style.cssText = 'position:fixed;left:-99999px;top:0;width:0;height:0;overflow:hidden'
+  document.body.appendChild(hote)
+
+  const actuel = ref<ReglagesBot>(portraits[0] ?? { shape: 'cercle', color: 'encre', expression: 'neutre' })
+  const app = createApp({
+    render: () => h(BloubBot, { ...actuel.value, ...options, size: taille, frozenAt: POSE_FIGE })
+  })
+  app.mount(hote)
+
+  try {
+    const out: T[] = []
+    for (let i = 0; i < portraits.length; i++) {
+      actuel.value = portraits[i]!
+      await nextTick()
+      const svg = hote.querySelector('svg')
+      if (!svg) throw new Error('bot hors ecran non rendu')
+      out.push(await lis(svg, i))
+    }
+    return out
+  } finally {
+    app.unmount()
+    hote.remove()
+  }
+}
+
+/**
+ * Assemble les portraits en zip STORE. PNG : raster 1024. SVG : le markup
+ * autonome, meme cadre serre que l'export encore du personnalisateur.
+ */
+export async function portraitsVersZip(
+  portraits: ReglagesBot[],
+  taille: number,
+  noms: string[],
+  format: 'png' | 'svg' = 'png'
+): Promise<Blob> {
+  const fichiers = await portraitsDuBot(portraits, taille, async (svg, i) => {
+    const markup = svgAutonome(svg, taille)
+    if (format === 'svg') {
+      return { name: noms[i]!, data: new TextEncoder().encode(markup) }
+    }
+    const blob = await versPng(markup, taille)
+    return { name: noms[i]!, data: new Uint8Array(await blob.arrayBuffer()) }
+  })
+  return zipBlob(fichiers)
 }
 
 /**

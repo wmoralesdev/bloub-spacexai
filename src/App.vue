@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import BotTile from '@/components/BotTile.vue'
 import Customizer from '@/components/Customizer.vue'
 import BloubBot from '@/components/BloubBot.vue'
@@ -7,14 +7,19 @@ import ExportBar from '@/components/ExportBar.vue'
 import CycleDialog from '@/components/CycleDialog.vue'
 import GifDialog from '@/components/GifDialog.vue'
 import Settings from '@/components/Settings.vue'
-import SideRail, { type ViewId } from '@/components/SideRail.vue'
+import SideRail from '@/components/SideRail.vue'
+import StillGrid from '@/components/StillGrid.vue'
+import StickerBrandingUpload from '@/components/StickerBrandingUpload.vue'
 import Timeline from '@/components/Timeline.vue'
+import ZipBar from '@/components/ZipBar.vue'
+import SpeakerEditor from '@/components/SpeakerEditor.vue'
 import { nomDeCycle, t } from '@/i18n'
 import {
   copie,
   copieTexte,
   cycleVersGif,
   cycleVersMp4,
+  portraitsVersZip,
   svgAutonome,
   telecharge,
   versGifAnime,
@@ -35,7 +40,9 @@ import {
   couleurDeFond,
   cycleImages,
   cyclePas,
+  DEMI_CADRE,
   nomFichier,
+  nomsFiges,
   type ActionId,
   type EtatExport,
   type FondGif,
@@ -44,6 +51,7 @@ import {
 import { HUMEURS } from '@/ui/gaze'
 import { INTRO, INTRO_GAZE, POSE_AT, introDue } from '@/ui/intro'
 import { ecris, lis, type NomStocke } from '@/ui/stockage'
+import { readTab, useTabView } from '@/ui/navigation'
 import {
   blockAt,
   blocksWith,
@@ -54,12 +62,17 @@ import {
   type Cycle
 } from '@/bot/cycles'
 import { DEFAULT_EXPRESSION, EXPRESSION_BY_ID } from '@/bot/expressions'
+import { MAX_FIGES, appliqueFige, makeFige, parseFiges } from '@/bot/figes'
+import { parseStoredStickerSheetBranding } from '@/ui/stickerSheetBranding'
 import { COLOR_BY_ID, DEFAULT_COLOR, DEFAULT_SHAPE, SHAPE_BY_ID } from '@/bot/skins'
 import { POSES, SEQUENCE, STATES, type StateId } from '@/bot/states'
 
+const BotCardEditor = defineAsyncComponent(() => import('@/components/BotCardEditor.vue'))
+const StickerSheetDialog = defineAsyncComponent(() => import('@/components/StickerSheetDialog.vue'))
+
 /**
- * L'URL pilote la vue : `#etat=orbit&stop` ouvre un etat precis sequence a
- * l'arret, `#planche` affiche la planche. On relit a chaque `hashchange` pour
+ * Le fragment decrit la lecture : `?tab=animations#etat=orbit&stop` ouvre un etat
+ * a l'arret, `#planche` affiche la planche. On relit a chaque `hashchange` pour
  * que les boutons precedent/suivant du navigateur fonctionnent vraiment.
  */
 function readHash() {
@@ -79,6 +92,8 @@ function readHash() {
 }
 
 const initial = readHash()
+const initialTab = readTab(location.search)
+const initialPlaybackLink = initialTab === 'animations' && initial.named
 const gallery = ref(initial.gallery)
 
 /* ----------------------------------------------------------------- arrivee */
@@ -122,7 +137,7 @@ const intro = ref(
   // ne pourrait la regarder qu'une fois.
   initial.arrivee ||
     introDue({
-      named: initial.named,
+      named: initialTab !== null,
       gallery: initial.gallery,
       rechargement: navigation !== 'navigate',
       calme: calme.value
@@ -172,7 +187,7 @@ const elapsed = ref(0)
 const cycle = computed(() => cycles.value.find((c) => c.id === activeId.value) ?? cycles.value[0]!)
 
 // un lien vers un etat precis ouvre le montage qui le contient
-if (initial.named) {
+if (initialPlaybackLink) {
   const found = locate(initial.state)
   if (found) {
     activeId.value = found.id
@@ -221,9 +236,17 @@ window.addEventListener('pagehide', enregistreCycles)
 
 /* -------------------------------------------------------------------- vues */
 
-// La personnalisation est la vue d'accueil, sauf si l'URL designe un etat
-// precis : dans ce cas le lien vise clairement le lecteur.
-const view = ref<ViewId>(initial.named ? 'animations' : 'personnaliser')
+// Sans onglet explicite, la personnalisation reste l'accueil, quel que soit le fragment.
+const { view, restoreView } = useTabView()
+// Keep the speaker draft and uploaded portrait for the current session, but
+// only load their canvas/assets when this section is first opened.
+const speakersOpened = ref(view.value === 'speakers')
+// Les cartes se chargent au premier passage et gardent leur brouillon entre les vues.
+const botCardsOpened = ref(view.value === 'bot-cards')
+watch(view, (value) => {
+  if (value === 'speakers') speakersOpened.value = true
+  if (value === 'bot-cards') botCardsOpened.value = true
+})
 
 /**
  * Apercu : la scene seule, sans barre laterale, sans panneau ni montage. On en
@@ -252,23 +275,7 @@ watch(preview, (on) => {
 // Meme regle qu'au changement de vue : on ne joue pas la sequence en
 // personnalisation, sinon la forme est illisible. Le watcher ne se declenchant
 // qu'au changement, il faut l'appliquer aussi a l'initialisation.
-const playing = ref(intro.value || (initial.playing && view.value === 'animations'))
-
-/**
- * Le dernier fragment que NOUS avons ecrit, en attente de son `hashchange`.
- *
- * Sans lui, le lecteur ne peut pas depasser un etat en DOUBLE dans le montage :
- * `location.replace` declenche un `hashchange` que l'ecouteur traite comme une
- * navigation entrante, et `locate` renvoie la PREMIERE occurrence de l'etat. Sur
- * un montage ou `idle` apparait deux fois, atteindre la seconde ramenait la tete
- * de lecture a la premiere — le montage bouclait sans jamais aboutir. Meme effet
- * a la pause, qui ecrit `&stop`.
- *
- * Consomme a la premiere lecture : une ecriture provoque au plus un evenement,
- * donc on ne doit pas ignorer durablement ce fragment — un retour arriere du
- * navigateur vers ce meme etat est une vraie navigation, et elle doit compter.
- */
-let ecritParNous = ''
+const playing = ref(intro.value || view.value === 'reglages' || (initialPlaybackLink && initial.playing))
 
 // L'URL est partageable, donc elle suit l'etat ET la lecture. replace et pas
 // push : on ne veut pas un cran d'historique par etat.
@@ -279,16 +286,13 @@ watch([state, playing], ([id, on]) => {
   // qui replacait la tete de lecture sur les index du montage de l'utilisateur,
   // alors que la vue joue le sien : le lecteur restait coince sur l'orbite.
   if (view.value !== 'animations') return
-  ecritParNous = `#etat=${id}${on ? '' : '&stop'}`
-  location.replace(ecritParNous)
+  const url = new URL(location.href)
+  url.hash = `etat=${id}${on ? '' : '&stop'}`
+  // Aucun hashchange interne : un etat repete ne revient pas a sa premiere occurrence.
+  history.replaceState(history.state, '', url)
 })
 
-window.addEventListener('hashchange', () => {
-  // notre propre ecriture n'est pas une navigation : cf. `ecritParNous`
-  if (location.hash === ecritParNous) {
-    ecritParNous = ''
-    return
-  }
+function navigateHash() {
   const next = readHash()
   /*
    * L'arrivee met en scene l'OUVERTURE de la page : la rejouer a chaud
@@ -303,16 +307,27 @@ window.addEventListener('hashchange', () => {
   }
   gallery.value = next.gallery
   if (next.gallery) return
+  // Le parametre d'onglet prime sur un fragment conserve lors d'un changement de vue.
+  const tab = readTab(location.search)
+  if (tab !== 'animations') {
+    restoreView()
+    return
+  }
   // Seul un lien qui NOMME un etat deplace la lecture. Sans ce garde, revenir
   // de la planche (`#planche` puis `#`) ramenerait au debut du montage.
   if (!next.named) return
   const found = locate(next.state)
   if (!found) return
-  // un lien qui NOMME un etat vise le lecteur : on y va, meme depuis une autre vue
-  view.value = 'animations'
+  // La reprise tient compte du lien avant le watcher de changement de vue.
+  resume = next.playing
+  resumeBlock = found.index
+  restoreView()
   activeId.value = found.id
   block.value = found.index
-})
+  playing.value = next.playing
+}
+window.addEventListener('hashchange', navigateHash)
+onBeforeUnmount(() => window.removeEventListener('hashchange', navigateHash))
 
 /**
  * Hors du lecteur on ne regarde pas la sequence : on retombe sur l'etat de repos
@@ -329,12 +344,12 @@ window.addEventListener('hashchange', () => {
  *
  * Seule exception, un lien qui NOMME un etat (`#etat=`) : celui-la vise le
  * lecteur et decrit deja sa lecture, `&stop` etant justement la facon de
- * l'ouvrir en pause. D'ou `initial.named` et pas `initial.playing` seul.
+ * l'ouvrir en pause. D'ou `initialPlaybackLink` et pas `initial.playing` seul.
  *
  * L'apercu, lui, lance toujours (`enterPreview`) : on n'y va que pour regarder,
  * et il n'y a aucune commande a l'ecran pour lancer quoi que ce soit.
  */
-let resume = initial.named && initial.playing
+let resume = initialPlaybackLink && initial.playing
 let resumeBlock = block.value
 
 /**
@@ -448,6 +463,121 @@ watch(shape, (v) => ecris('forme', v))
 watch(color, (v) => ecris('couleur', v))
 watch(expression, (v) => ecris('expression', v))
 
+/* -------------------------------------------------------------------- figes */
+
+const figes = ref(parseFiges(lis('figes')))
+watch(figes, (liste) => ecris('figes', JSON.stringify(liste)))
+
+/** Portrait dont le triple suit les pickers. `null` : on compose le prochain ajout. */
+const figeChoisi = ref<string | null>(null)
+
+// Print selection is independent of the portrait currently being edited.
+const sheetSelectedIds = ref<string[]>([])
+const sheetItems = computed(() => figes.value.filter((item) => sheetSelectedIds.value.includes(item.id)))
+const sheetDialogMounted = ref(false)
+const sheetDialogOpen = ref(false)
+const sheetBranding = ref(parseStoredStickerSheetBranding(lis('sticker-sheet-branding')))
+watch(sheetBranding, (branding) => ecris('sticker-sheet-branding', JSON.stringify(branding)))
+watch(figes, (items) => {
+  const ids = new Set(items.map((item) => item.id))
+  sheetSelectedIds.value = sheetSelectedIds.value.filter((id) => ids.has(id))
+}, { flush: 'sync' })
+
+function toggleSheetItem(id: string) {
+  sheetSelectedIds.value = sheetSelectedIds.value.includes(id)
+    ? sheetSelectedIds.value.filter((selected) => selected !== id)
+    : [...sheetSelectedIds.value, id]
+}
+
+function openStickerSheet() {
+  if (!sheetItems.value.length && !sheetBranding.value) return
+  sheetDialogMounted.value = true
+  sheetDialogOpen.value = true
+}
+
+type InstantFige = {
+  figes: ReturnType<typeof parseFiges>
+  choisi: string | null
+  shape: string
+  color: string
+  expression: string
+}
+
+const historique = ref<InstantFige[]>([])
+let enTrainDeDefaire = false
+
+function cloneFiges() {
+  return figes.value.map((f) => ({ ...f }))
+}
+
+function pousseHistorique() {
+  historique.value = [
+    ...historique.value.slice(-29),
+    {
+      figes: cloneFiges(),
+      choisi: figeChoisi.value,
+      shape: shape.value,
+      color: color.value,
+      expression: expression.value
+    }
+  ]
+}
+
+function relacheFige() {
+  figeChoisi.value = null
+}
+
+function defaireFige() {
+  const prev = historique.value.at(-1)
+  if (!prev) return
+  historique.value = historique.value.slice(0, -1)
+  enTrainDeDefaire = true
+  figes.value = prev.figes
+  figeChoisi.value = prev.choisi
+  shape.value = prev.shape
+  color.value = prev.color
+  expression.value = prev.expression
+  void nextTick(() => {
+    enTrainDeDefaire = false
+  })
+}
+
+function ajouteFige() {
+  if (figeChoisi.value) return
+  const neuf = makeFige(figes.value, shape.value, color.value, expression.value)
+  if (!neuf) return
+  pousseHistorique()
+  figes.value = [...figes.value, neuf]
+}
+
+function choisirFige(id: string) {
+  if (figeChoisi.value === id) {
+    relacheFige()
+    return
+  }
+  const item = figes.value.find((f) => f.id === id)
+  if (!item) return
+  figeChoisi.value = id
+  shape.value = item.shape
+  color.value = item.color
+  expression.value = item.expression
+}
+
+function retireFige(id: string) {
+  pousseHistorique()
+  figes.value = figes.value.filter((f) => f.id !== id)
+  if (figeChoisi.value === id) figeChoisi.value = null
+}
+
+watch([shape, color, expression], ([forme, teinte, visage]) => {
+  if (enTrainDeDefaire || !figeChoisi.value) return
+  const actuel = figes.value.find((f) => f.id === figeChoisi.value)
+  if (!actuel) return
+  if (actuel.shape === forme && actuel.color === teinte && actuel.expression === visage) return
+  pousseHistorique()
+  figes.value = appliqueFige(figes.value, figeChoisi.value, forme, teinte, visage)
+})
+
 /**
  * Nom du produit, en capitales pour le grand mot du pied de page. PAS traduit —
  * c'est une marque. Les capitales sont un logotype propre a ce pied de page : en
@@ -510,7 +640,8 @@ watch(view, (v) => {
     humeur.value = HUMEURS[i % HUMEURS.length]!
     i++
   }, HUMEUR_MS)
-})
+}, { immediate: true })
+onBeforeUnmount(() => clearInterval(humeurTimer))
 
 const order = computed(() => SEQUENCE.map((id) => STATES.find((s) => s.id === id)!))
 
@@ -719,6 +850,25 @@ async function exporte(id: ActionId, confirme = false) {
 }
 
 /**
+ * Zip des portraits figes : chaque fichier vient d'un bot hors ecran fige a t = 1,
+ * jamais de l'avatar vivant (un clignement ferait un autre fichier a chaque clic).
+ */
+async function exporteFiges(format: 'png' | 'svg') {
+  if (etatExport.value === 'occupe' || !figes.value.length) return
+  clearTimeout(confirmation)
+  etatExport.value = 'occupe'
+  const taille = format === 'svg' ? DEMI_CADRE * 2 : 1024
+  try {
+    const zip = await portraitsVersZip(figes.value, taille, nomsFiges(figes.value, format), format)
+    telecharge(zip, format === 'svg' ? 'bloub-figes-svg.zip' : 'bloub-figes.zip')
+    etatExport.value = 'exporte'
+  } catch {
+    etatExport.value = 'erreur'
+  }
+  confirmation = setTimeout(() => (etatExport.value = 'pret'), CONFIRMATION_MS)
+}
+
+/**
  * Rejoue l'entree a CHAQUE arrivee dans les reglages.
  *
  * Sans ce recalage, le lecteur reprend la date de debut de bloc et le `elapsed`
@@ -794,7 +944,11 @@ watch(
          sixieme de la largeur pour rien. Le padding BAS n'est pas touche ici : la
          vue Animations le remplace par la reserve de la barre de montage, et une
          variante `max-lg:pb-*` reprendrait la main dessus. -->
+    <SpeakerEditor v-if="speakersOpened" v-show="view === 'speakers'" :active="view === 'speakers'" />
+    <BotCardEditor v-if="botCardsOpened" v-show="view === 'bot-cards'" />
+
     <div
+      v-if="view !== 'speakers' && view !== 'bot-cards'"
       class="scene min-h-full items-stretch justify-center p-8 max-lg:flex max-lg:flex-col max-lg:gap-10 max-lg:px-5"
       :class="[
         !preview && view === 'animations' && 'pb-[calc(var(--timeline)_+_1rem)]',
@@ -850,7 +1004,28 @@ watch(
         <!-- l'avatar se met a la hauteur disponible : sur une fenetre basse, la
              barre de montage lui prend assez de place pour qu'un carre de 460
              deborde et fasse defiler la page -->
+        <StillGrid
+          v-if="view === 'figes' && !preview"
+          :items="figes"
+          :selected-id="figeChoisi"
+          :sheet-selected-ids="sheetSelectedIds"
+          :has-branding="!!sheetBranding"
+          :shape="shape"
+          :color="color"
+          :expression="expression"
+          @choisir="choisirFige"
+          @retirer="retireFige"
+          @sheet-toggle="toggleSheetItem"
+          @sheet-select-all="sheetSelectedIds = figes.map((item) => item.id)"
+          @sheet-clear="sheetSelectedIds = []"
+          @create-sheet="openStickerSheet"
+        >
+          <template #branding>
+            <StickerBrandingUpload v-model="sheetBranding" />
+          </template>
+        </StillGrid>
         <div
+          v-else
           class="avatar flex aspect-square w-full items-center justify-center"
           :class="[
             preview
@@ -909,6 +1084,14 @@ watch(
         >
           <ExportBar :etat="etatExport" @exporter="exporte" />
         </div>
+        <div
+          v-if="view === 'figes' && !preview"
+          class="barre-export barre-export--bas"
+          :class="(nue || barreCachee) && 'barre-export--cachee'"
+          :inert="nue || barreCachee"
+        >
+          <ZipBar :etat="etatExport" :disabled="!figes.length" @exporter="exporteFiges" />
+        </div>
 
         <!--
           Les deux boites sont HORS de la barre d'export, alors que c'est elle qui
@@ -927,6 +1110,13 @@ watch(
           :erreur="erreurCycle"
           @confirm="exporteCycle"
           @annuler="annuleCycle"
+        />
+
+        <StickerSheetDialog
+          v-if="view === 'figes' && sheetDialogMounted && !preview"
+          v-model:open="sheetDialogOpen"
+          :items="sheetItems"
+          :branding="sheetBranding"
         />
 
         <!-- Export de l'AVATAR : le GIF est le seul format a demander son fond,
@@ -966,7 +1156,42 @@ watch(
           </div>
         </template>
 
-        <!-- personnalisation -->
+        <template v-else-if="view === 'figes'">
+          <Customizer
+            v-model:shape="shape"
+            v-model:color="color"
+            v-model:expression="expression"
+          />
+          <button
+            type="button"
+            class="mt-5 w-full cursor-pointer rounded-xl bg-[var(--ink)] py-2.5 text-sm font-medium text-[var(--paper)] transition hover:opacity-90 disabled:cursor-default disabled:opacity-40"
+            :disabled="!!figeChoisi || figes.length >= MAX_FIGES"
+            @click="ajouteFige"
+          >
+            {{ t('figes.add') }}
+          </button>
+          <div class="mt-2 grid grid-cols-2 gap-2">
+            <button
+              v-if="figeChoisi"
+              type="button"
+              class="cursor-pointer rounded-xl border border-[var(--line)] py-2.5 text-sm font-medium text-[var(--ink)] transition hover:bg-black/5"
+              @click="relacheFige"
+            >
+              {{ t('figes.unselect') }}
+            </button>
+            <button
+              type="button"
+              class="cursor-pointer rounded-xl border border-[var(--line)] py-2.5 text-sm font-medium text-[var(--ink)] transition hover:bg-black/5 disabled:cursor-default disabled:opacity-40"
+              :class="!figeChoisi && 'col-span-2'"
+              :disabled="!historique.length"
+              @click="defaireFige"
+            >
+              {{ t('figes.undo') }}
+            </button>
+          </div>
+        </template>
+
+        <!-- personnalisation, et reglages (colonne refermee) -->
         <template v-else>
           <Customizer
             v-model:shape="shape"

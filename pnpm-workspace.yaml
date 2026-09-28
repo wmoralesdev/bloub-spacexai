@@ -1,0 +1,13 @@
+allowBuilds:
+  esbuild: true
+  puppeteer: false
+minimumReleaseAgeExclude:
+  - '@hyperframes/core@0.8.46'
+  - '@hyperframes/engine@0.8.46'
+  - '@hyperframes/lint@0.8.46'
+  - '@hyperframes/parsers@0.8.46'
+  - '@hyperframes/player@0.8.46'
+  - '@hyperframes/producer@0.8.46'
+  - '@hyperframes/studio-server@0.8.46'
+overrides:
+  get-east-asian-width: 1.6.0

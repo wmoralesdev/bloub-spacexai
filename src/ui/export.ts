@@ -261,6 +261,23 @@ export function nomFichier(
 }
 
 /**
+ * Noms de fichiers d'une collection de portraits. Un triple identique deux
+ * fois recoit un suffixe `-2`, `-3` : le zip refuse les doublons de chemin.
+ */
+export function nomsFiges(
+  portraits: Array<{ shape: string; expression: string; color: string }>,
+  extension = 'png'
+): string[] {
+  const vus = new Map<string, number>()
+  return portraits.map((p) => {
+    const base = nomFichier(p.shape, p.expression, p.color, extension)
+    const n = (vus.get(base) ?? 0) + 1
+    vus.set(base, n)
+    return n === 1 ? base : nomFichier(p.shape, p.expression, p.color, extension, String(n))
+  })
+}
+
+/**
  * Le navigateur sait-il encoder une video ici ?
  *
  * Ce garde vit ICI et pas dans `video.ts`, et ce n'est pas un rangement : le

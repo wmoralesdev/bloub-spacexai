@@ -19,14 +19,23 @@
   ],
   "packageManager": "pnpm@11.17.0",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "start": "node server/index.ts",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@hyperframes/core": "0.8.46",
+    "@hyperframes/player": "0.8.46",
+    "@hyperframes/producer": "0.8.46",
+    "clipper2-ts": "2.0.1-18",
+    "gsap": "3.15.0",
     "mediabunny": "^1.54.0",
+    "pdf-lib": "1.17.1",
+    "puppeteer-core": "25.11.0",
+    "qrcode-generator": "2.0.4",
     "vue": "^3.5.41"
   },
   "devDependencies": {
@@ -39,5 +48,8 @@
     "vite": "^8.2.1",
     "vitest": "^4.1.10",
     "vue-tsc": "^3.3.9"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
